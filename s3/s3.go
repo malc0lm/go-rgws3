@@ -410,12 +410,17 @@ func (b *Bucket) MultiDel(paths []string) error {
 	// Content-MD5 is required
 	md5hash := base64md5(data)
 	req := &request{
-		method:  "POST",
-		bucket:  b.Name,
-		path:    "/",
-		params:  url.Values{"delete": {""}},
-		headers: http.Header{"Content-MD5": {md5hash}},
-		payload: bytes.NewReader(data),
+		method: "POST",
+		bucket: b.Name,
+		path:   "/",
+		params: url.Values{"delete": {""}},
+		headers: map[string][]string{
+			"Content-MD5":    {md5hash},
+			"Content-Length": {strconv.Itoa(len(data))},
+			"Content-Type":   {"text/xml"},
+		},
+		payload:    bytes.NewReader(data),
+		isMultiDel: true,
 	}
 
 	return b.S3.query(req, nil)
@@ -640,15 +645,16 @@ func (b *Bucket) SignedURL(path string, expires time.Time) string {
 }
 
 type request struct {
-	method   string
-	bucket   string
-	path     string
-	signpath string
-	params   url.Values
-	headers  http.Header
-	baseurl  string
-	payload  io.Reader
-	prepared bool
+	method     string
+	bucket     string
+	path       string
+	signpath   string
+	params     url.Values
+	headers    http.Header
+	baseurl    string
+	payload    io.Reader
+	prepared   bool
+	isMultiDel bool
 }
 
 // amazonShouldEscape returns true if byte should be escaped
@@ -699,7 +705,16 @@ func (req *request) url(full bool) (*url.URL, error) {
 	if full {
 		u.Opaque = "//" + u.Host + u.Opaque
 	}
-	u.RawQuery = req.params.Encode()
+
+	// golang does not support encode emtpy value query currently
+	// like ?delete(it will encode to ?delete= )
+	// we have to hardcode to url.RawQuery
+	// https://github.com/golang/go/issues/20820
+	if req.isMultiDel {
+		u.RawQuery = "delete"
+	} else {
+		u.RawQuery = req.params.Encode()
+	}
 
 	return u, nil
 }
