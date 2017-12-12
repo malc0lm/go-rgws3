@@ -356,12 +356,17 @@ func (m *Multi) Complete(parts []Part) error {
 	if err != nil {
 		return err
 	}
+	headers := map[string][]string{
+		"Content-Length": {strconv.Itoa(len(data))},
+	}
+
 	for attempt := attempts.Start(); attempt.Next(); {
 		req := &request{
 			method:  "POST",
 			bucket:  m.Bucket.Name,
 			path:    m.Key,
 			params:  params,
+			headers: headers,
 			payload: bytes.NewReader(data),
 		}
 		err := m.Bucket.S3.query(req, nil)
