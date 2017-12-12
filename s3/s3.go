@@ -16,7 +16,6 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
-	"github.com/malc0lm/goamz/aws"
 	"io"
 	"io/ioutil"
 	"log"
@@ -27,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/malc0lm/goamz/aws"
 )
 
 const debug = false
@@ -145,7 +146,6 @@ func (b *Bucket) PutBucket(perm ACL) error {
 		bucket:  b.Name,
 		path:    "/",
 		headers: headers,
-		payload: b.locationConstraint(),
 	}
 	return b.S3.query(req, nil)
 }
