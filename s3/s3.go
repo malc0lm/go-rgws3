@@ -382,7 +382,7 @@ func (b *Bucket) Copy(oldPath, newPath string, perm ACL) error {
 	}
 
 	for attempt := attempts.Start(); attempt.Next(); {
-		_, err = b.S3.run(req, nil)
+		err = b.S3.query(req, nil)
 		if shouldRetry(err) && attempt.HasNext() {
 			continue
 		}
@@ -612,6 +612,11 @@ func (b *Bucket) GetKey(path string) (*Key, error) {
 	key := &Key{}
 	for attempt := attempts.Start(); attempt.Next(); {
 		resp, err := b.S3.run(req, nil)
+		defer func() {
+			if resp.Body != nil {
+				resp.Body.Close()
+			}
+		}()
 		if shouldRetry(err) && attempt.HasNext() {
 			continue
 		}
