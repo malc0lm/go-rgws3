@@ -193,6 +193,34 @@ func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
 	return nil, err
 }
 
+// GetResponseWithHeaders retrieves an object from an S3 bucket
+// Accepts custom headers to be sent as the second parameter
+// returning the body of the HTTP response.
+// It is the caller's responsibility to call Close on rc when
+// finished reading
+func (b *Bucket) GetResponseWithHeaders(path string, headers map[string][]string) (resp *http.Response, err error) {
+	req := &request{
+		bucket:  b.Name,
+		path:    path,
+		headers: headers,
+	}
+	err = b.S3.prepare(req)
+	if err != nil {
+		return nil, err
+	}
+	for attempt := attempts.Start(); attempt.Next(); {
+		resp, err := b.S3.run(req, nil)
+		if shouldRetry(err) && attempt.HasNext() {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		return resp, nil
+	}
+	panic("unreachable")
+}
+
 // GetResponse retrieves an object from an S3 bucket returning the http response
 // It is the caller's responsibility to call Close on rc when
 // finished reading.
