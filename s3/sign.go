@@ -39,11 +39,23 @@ var s3ParamsToSign = map[string]bool{
 	"response-content-encoding":    true,
 }
 
+type amzKv struct {
+	key   string
+	value string
+}
+type amzKvSlice []amzKv
+
+func (p amzKvSlice) Len() int { return len(p) }
+func (p amzKvSlice) Less(i, j int) bool {
+	return p[i].key < p[j].key
+}
+func (p amzKvSlice) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
 func sign(auth aws.Auth, method, canonicalPath string, params, headers map[string][]string) {
 	var md5, ctype, date, xamz string
 	var xamzDate bool
 	var sarray []string
-
+	var amzSlice amzKvSlice
 	// add security token
 	if auth.Token != "" {
 		headers["x-amz-security-token"] = []string{auth.Token}
@@ -68,7 +80,11 @@ func sign(auth aws.Auth, method, canonicalPath string, params, headers map[strin
 		default:
 			if strings.HasPrefix(k, "x-amz-") {
 				vall := strings.Join(v, ",")
-				sarray = append(sarray, k+":"+vall)
+				// we just want to sort "x-amz-" key in header, instead "key:value",
+				// e.g. "x-amz-copy-source:/xx/xx" will larger than "x-amz-copy-source-range:bytes=0-n"
+				// but "x-amz-copy-source" is smaller than "x-amz-copy-source-range"
+				// compare "key:value" will cause SignitureNotMatch in Ceph S3
+				amzSlice = append(amzSlice, amzKv{key: k, value: vall})
 				if k == "x-amz-date" {
 					xamzDate = true
 					date = ""
@@ -76,8 +92,11 @@ func sign(auth aws.Auth, method, canonicalPath string, params, headers map[strin
 			}
 		}
 	}
-	if len(sarray) > 0 {
-		sort.StringSlice(sarray).Sort()
+	if len(amzSlice) > 0 {
+		sort.Sort(amzSlice)
+		for _, amz := range amzSlice {
+			sarray = append(sarray, amz.key+":"+amz.value)
+		}
 		xamz = strings.Join(sarray, "\n") + "\n"
 	}
 
