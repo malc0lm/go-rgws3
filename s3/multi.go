@@ -10,6 +10,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Multi represents an unfinished multipart upload.
@@ -223,6 +224,53 @@ type listPartsResp struct {
 	NextPartNumberMarker string
 	IsTruncated          bool
 	Part                 []Part
+}
+
+type CopyObjectResult struct {
+	ETag         string
+	LastModified string
+}
+
+func (m *Multi) PutPartCopy(n int, source string) (*CopyObjectResult, Part, error) {
+
+	sourceBucket := m.Bucket.S3.Bucket(strings.TrimRight(strings.SplitAfterN(source, "/", 2)[0], "/"))
+	sourceMeta, err := sourceBucket.Head(strings.SplitAfterN(source, "/", 2)[1])
+	if err != nil {
+		return nil, Part{}, err
+	}
+
+	headers := map[string][]string{
+		"x-amz-copy-source":       {source},
+		"x-amz-copy-source-range": {"bytes=0-" + strconv.FormatInt(sourceMeta.ContentLength-1, 10)},
+	}
+	//	options.addHeaders(headers)
+	params := map[string][]string{
+		"uploadId":   {m.UploadId},
+		"partNumber": {strconv.FormatInt(int64(n), 10)},
+	}
+
+	for attempt := attempts.Start(); attempt.Next(); {
+		req := &request{
+			method:  "PUT",
+			bucket:  m.Bucket.Name,
+			path:    m.Key,
+			headers: headers,
+			params:  params,
+		}
+		resp := &CopyObjectResult{}
+		err = m.Bucket.S3.query(req, resp)
+		if shouldRetry(err) && attempt.HasNext() {
+			continue
+		}
+		if err != nil {
+			return nil, Part{}, err
+		}
+		if resp.ETag == "" {
+			return nil, Part{}, errors.New("part upload succeeded with no ETag")
+		}
+		return resp, Part{n, resp.ETag, sourceMeta.ContentLength}, nil
+	}
+	panic("unreachable")
 }
 
 // That's the default. Here just for testing.
